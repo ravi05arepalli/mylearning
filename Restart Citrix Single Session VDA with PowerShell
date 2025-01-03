@@ -1,0 +1,73 @@
+# Load Citrix PowerShell Snap-in
+asnp citrix*
+
+# Generate file with all the VMs 
+Get-BrokerMachine -AdminAddress "ddc04.testlab.com:80" | Select-Object -ExpandProperty MachineName | Out-File "C:\temp\vms.txt"
+
+# Path to the text file containing the list of VM names
+$vmsFile = "C:\Temp\vms.txt"
+
+# Admin address of the Citrix Delivery Controller
+$adminAddress = "ddc04.testlab.com:80"
+
+# Check if the file exists
+if (-not (Test-Path $vmsFile)) {
+    Write-Host "Error: File not found at $vmsFile" -ForegroundColor Red
+    exit
+}
+
+# Read all VM names from the file
+$vms = Get-Content -Path $vmsFile
+
+# Ensure the list is not empty
+if ($vms.Count -eq 0) {
+    Write-Host "Error: No VMs found in the file." -ForegroundColor Red
+    exit
+}
+
+# Loop through each VM and log off users, then reboot with a delay of 2 seconds
+foreach ($vm in $vms) {
+    Write-Host "Processing VM: $vm" -ForegroundColor Yellow
+    try {
+        # Start logging the operation
+        $operation = Start-LogHighLevelOperation -AdminAddress $adminAddress -Source "Script" -Text "Log Off User(s) from '$vm'"
+
+        # Get active sessions on the machine (omit MaxRecordCount for all sessions)
+        $sessions = Get-BrokerSession -AdminAddress $adminAddress -Filter {MachineName -eq $vm}
+
+        if ($sessions.Count -gt 0) {
+            # Log off each user session
+            foreach ($session in $sessions) {
+                $userName = $session.UserName  # Get the username
+                Write-Host "Logging off user: $userName" -ForegroundColor Yellow
+                Stop-BrokerSession -AdminAddress $adminAddress -InputObject $session -LoggingId $operation.Id
+            }
+            Write-Host "Successfully logged off users from VM: $vm" -ForegroundColor Green
+        } else {
+            Write-Host "No active users found on VM: $vm" -ForegroundColor Cyan
+        }
+
+        # Stop logging the operation as successful
+        Stop-LogHighLevelOperation -AdminAddress $adminAddress -HighLevelOperationId $operation.Id -IsSuccessful $true
+
+        # Add a 10-second delay to ensure the logoff process is completed
+        Write-Host "Waiting 10 seconds for the logoff process to complete..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 10
+
+        # Start logging the reboot operation
+        $rebootOperation = Start-LogHighLevelOperation -AdminAddress $adminAddress -Source "Script" -Text "Reboot Machine '$vm'"
+
+        # Initiate reboot for the machine
+        New-BrokerHostingPowerAction -Action "Restart" -AdminAddress $adminAddress -MachineName $vm
+
+        # Stop logging the reboot operation as successful
+        Stop-LogHighLevelOperation -AdminAddress $adminAddress -HighLevelOperationId $rebootOperation.Id -IsSuccessful $true
+
+        Write-Host "Successfully initiated reboot for VM: $vm" -ForegroundColor Green
+    } catch {
+        Write-Host "Failed to log off or reboot VM: $vm. Error: $_" -ForegroundColor Red
+    }
+    Start-Sleep -Seconds 1
+}
+
+Write-Host "All VMs have been processed." -ForegroundColor Cyan
