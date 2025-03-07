@@ -1,0 +1,83 @@
+<#This script will give you the space details of servers in the below format in a CSV file.
+Csv file is attached with this udemy section.
+
+System	        Drive	            Name	            Partition	FreeSpace  Size
+CENTRALSERVER	\\.\PHYSICALDRIVE0	KINGSTON SA2000M8250G			232        232
+CENTRALSERVER	\\.\PHYSICALDRIVE0	C:	                 C:	        15	       232
+CENTRALSERVER	\\.\PHYSICALDRIVE1	ST1000LM035-1RK                 172		   931
+CENTRALSERVER	\\.\PHYSICALDRIVE1	F:	                 F:	        221	       330
+CENTRALSERVER	\\.\PHYSICALDRIVE1	E:	                 E:	        53	       299
+CENTRALSERVER	\\.\PHYSICALDRIVE1	D:	                 D:	        6	       299
+Report as on 13 April 2021					
+
+#>
+
+
+#change the location of serverlist based on your location
+$servers=get-content D:\Powershell_Learning\ServerList.txt
+$output_csv='D:\Powershell_Learning\Server_Freespace_Info.csv'
+$result=@()
+$date=Get-Date -Format D
+
+
+ForEach($ServerName in $servers){
+
+#Testing if the server is pingable
+$pingtest=Test-Connection $ServerName -Count 1 -ErrorAction SilentlyContinue 
+if(!$pingtest)
+{
+ $result+=New-Object PSObject -Property @{
+                    'System'=$ServerName;
+                    'Drive'='No Ping';
+                    'Name'='';
+                    'Size'='';
+                    'FreeSpace'='';
+                    }
+
+ }
+else
+{    
+    $disks=gwmi -computername $ServerName -query "SELECT * FROM Win32_DiskDrive"
+    ForEach($disk in $disks){
+        $result+=New-Object PSObject -Property @{
+            'System'=$disk.SystemName
+            'Name'=$disk.Caption
+            'Drive'=$disk.DeviceID;
+            'Partition'=''
+            'Size'=[math]::Truncate($disk.Size / 1GB);
+            'FreeSpace'='';
+            }
+        $partitions=gwmi -computername $ServerName -query "ASSOCIATORS OF {Win32_DiskDrive.DeviceID='$($disk.DeviceID)'} WHERE AssocClass = Win32_DiskDriveToDiskPartition"
+        ForEach($partition in $partitions){
+            $logicaldisks=gwmi -computername $ServerName -query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($partition.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition"
+            ForEach($logicaldisk in $logicaldisks){
+                #if($logicaldisk){
+                    $result+=New-Object PSObject -Property @{
+                    'System'=$logicaldisk.SystemName;
+                    'Name'=$logicaldisk.Caption;
+                    'Drive'=$disk.DeviceID;
+                    'Partition'=$logicaldisk.DeviceID;
+                    'Size'=[math]::Truncate($logicaldisk.Size / 1GB);
+                    'FreeSpace'=[math]::Truncate($logicaldisk.FreeSpace / 1Gb);
+                    }
+                #}
+            }
+        }
+    }
+}
+}
+$result | Select System,Drive,Name,Partition,FreeSpace,Size | Export-csv $output_csv -NoTypeInformation
+'Report as on ' + $date | Add-Content $output_csv 
+
+#Sending mail to your email ID with the file as attachment . Please change the from email , to email and port number based on your requirement.
+Send-MailMessage -From 'fromemail@domain.com' -to 'toemail@domain.com' -Body 'Please find attached the space utilization report'`
+ -Subject 'test mail'`
+ -SmtpServer 'smtp.domain.com'`
+ -Attachments $output_csv `
+ -Port 587 
+
+
+# If you need to invoke the file here. 
+Invoke-Item $output_csv
+
+# Please email me at vishnugupth@live.com or post your requirement in https://www.powershell4u.com/ 
