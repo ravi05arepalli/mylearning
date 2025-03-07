@@ -1,0 +1,44 @@
+<#
+.SYNOPSIS
+    This script adds users to specific Active Directory (AD) groups based on their region.
+
+.DESCRIPTION
+    The script reads user information from a CSV file and adds users to different AD groups based on their region.
+    - If the region is "US", the user is added to the "secCLICKPersona-NA-DCV-Power" group.
+    - If the region is "EU", the user is added to the "secCLICKPersona-EU-DCV-Power" group.
+
+.EXAMPLE
+    Make sure your CSV file has columns named Username and Region. For example:
+
+    Username,Region
+    User1,US
+    User2,EU
+    User3,US
+
+    Save the script and run it in PowerShell:
+    .\Add-UsersToADGroup.ps1
+#>
+
+# Import the Active Directory module
+Import-Module ActiveDirectory
+
+# Define the groups
+$groupUS = "secCLICKPersona-NA-DCV-Power"
+$groupEU = "secCLICKPersona-EU-DCV-Power"
+
+# Import the CSV file
+$csvPath = "D:\Scripts\AWSVDI\Users.csv" # Replace with the actual path to your CSV file
+$users = Import-Csv -Path $csvPath
+
+# Loop through each user in the CSV
+foreach ($user in $users) {
+    if ($user.Region -eq "US") {
+        Add-ADGroupMember -Identity $groupUS -Members $user.Username
+        Write-Host "Added $($user.Username) to $groupUS"
+    } elseif ($user.Region -eq "EU") {
+        Add-ADGroupMember -Identity $groupEU -Members $user.Username
+        Write-Host "Added $($user.Username) to $groupEU"
+    } else {
+        Write-Host "Region for $($user.Username) is not recognized"
+    }
+}
